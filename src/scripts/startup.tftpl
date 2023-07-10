@@ -1,0 +1,73 @@
+Content-Type: multipart/mixed; boundary="//"
+MIME-Version: 1.0
+
+--//
+Content-Type: text/cloud-config; charset="us-ascii"
+MIME-Version: 1.0
+Content-Transfer-Encoding: 7bit
+Content-Disposition: attachment; filename="cloud-config.txt"
+
+#cloud-config
+cloud_final_modules:
+- [scripts-user, always]
+
+--//
+Content-Type: text/x-shellscript; charset="us-ascii"
+MIME-Version: 1.0
+Content-Transfer-Encoding: 7bit
+Content-Disposition: attachment; filename="userdata.txt"
+
+#!/bin/bash
+# NOTE: EC2 User Data is run as root
+# so you should not need sudo here
+
+# Wait for the EBS Data Volume to be available
+max=10
+count=0
+elapsed=0
+until (test -e ${datadevicename})
+do
+  echo "-- WAITING FOR EBS DATA VOLUME...$${elapsed}s"
+
+  if (test $count -ge $max);
+  then
+    echo "-- WAITED TOO LONG...BAILING"
+    break
+  fi
+
+  sleep 10
+  ((count=$count+1))
+  ((elapsed=$count * 10))
+done
+
+if (test $count -lt $max);
+then
+  # Attempt to format drive
+  echo "-- CHECKING EBS FORMATTING"
+  echo "-- EBS DEVICE: ${datadevicename}"
+  echo "-- FORMATTING DRIVE as ${fstype}"
+  mkfs -t ${fstype} ${datadevicename}
+
+  echo "-- CHECKING DATA DIRECTORY MOUNT"
+
+  # Make sure our data directory is mounted
+  if mountpoint -q ${outputdir};
+  then
+    echo "-- OUTPUT DIRECTORY ALREADY MOUNTED"
+  else
+    echo "-- MOUNTING OUTPUT DIRECTORY"
+    mkdir ${outputdir}
+    mount ${datadevicename} ${outputdir}
+  fi
+
+  # Grant permissions
+  echo "-- GRANTING PERMISSIONS"
+  chown -R ec2-user ${outputdir}
+  chmod 2775 ${outputdir}
+  find ${outputdir} -type d -exec sudo chmod 2775 {} \;
+  find ${outputdir} -type f -exec sudo chmod 0664 {} \;
+  echo "-- user created and permissions granted"
+
+fi
+
+--//--
